@@ -6,7 +6,7 @@ A powerful and flexible menu management module for WHMCS that allows administrat
 **Version:** 4.0  
 **Website:** [https://shahidmalla.com](https://shahidmalla.com)
 
-![Menu Manager Preview](https://shahidmalla.com/assets/images/menumanager-preview.jpg)
+![Menu Manager Preview](https://shahidmalla.com/imgdb/menu-manager.png)
 
 ## 🌟 Features
 
