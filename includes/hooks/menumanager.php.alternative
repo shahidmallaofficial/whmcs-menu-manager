@@ -1,0 +1,267 @@
+<?php
+/**
+ * Menu Manager Hook File 
+ *
+ * @author    Shahid Malla
+ * @website   https://shahidmalla.com
+ * @version   4.0
+ */
+
+use WHMCS\Database\Capsule;
+
+// Prevent direct access
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
+
+/**
+ * Add menu JavaScript to the client area header
+ */
+add_hook("ClientAreaHeaderOutput", 1, function($vars) {
+    // Determine if user is logged in
+    $isLoggedIn = (isset($_SESSION["uid"]) && !empty($_SESSION["uid"]));
+    $menuType = $isLoggedIn ? "client" : "guest";
+    
+    try {
+        // Get active menu items
+        $menus = Capsule::table("mod_menumanager")
+            ->where("menu_type", $menuType)
+            ->where("is_active", 1)
+            ->orderBy("menu_order", "asc")
+            ->get();
+        
+        if (count($menus) == 0) {
+            return "";
+        }
+        
+        // Convert menus to JSON for JavaScript
+        $parentMenus = [];
+        $childMenus = [];
+        
+        foreach ($menus as $menu) {
+            if (empty($menu->parent_id)) {
+                $parentMenus[$menu->id] = [
+                    "id" => $menu->id,
+                    "name" => $menu->menu_name,
+                    "url" => $menu->menu_url,
+                    "icon" => $menu->menu_icon,
+                    "order" => $menu->menu_order
+                ];
+            } else {
+                if (!isset($childMenus[$menu->parent_id])) {
+                    $childMenus[$menu->parent_id] = [];
+                }
+                
+                $childMenus[$menu->parent_id][] = [
+                    "id" => $menu->id,
+                    "name" => $menu->menu_name,
+                    "url" => $menu->menu_url,
+                    "icon" => $menu->menu_icon,
+                    "order" => $menu->menu_order
+                ];
+            }
+        }
+        
+        // Sort parent menus by order
+        uasort($parentMenus, function($a, $b) {
+            return $a["order"] - $b["order"];
+        });
+        
+        // Sort child menus
+        foreach ($childMenus as &$children) {
+            usort($children, function($a, $b) {
+                return $a["order"] - $b["order"];
+            });
+        }
+        
+        // Convert to JSON
+        $menusJson = json_encode([
+            "parents" => $parentMenus,
+            "children" => $childMenus
+        ]);
+        
+        // Return CSS and JavaScript that will run when the page loads
+        return "
+        <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css\">
+        <style>
+            /* Enhanced styling for custom menu */
+            #mainNavbar .custom-menu-nav {
+                margin-right: auto;
+            }
+            
+            #mainNavbar .custom-menu-nav .nav-item {
+                margin: 0 2px;
+            }
+            
+            #mainNavbar .custom-menu-nav .nav-link {
+                color: #1a4b72 !important;
+                font-weight: 600 !important;
+                padding: 10px 15px !important;
+                transition: all 0.3s ease !important;
+                display: flex !important;
+                align-items: center !important;
+            }
+            
+            #mainNavbar .custom-menu-nav .nav-link:hover {
+                color: #fff !important;
+                background-color: #1a4b72 !important;
+                transform: translateY(-2px);
+                border-radius: 4px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            }
+            
+            #mainNavbar .custom-menu-nav .nav-link i {
+                margin-right: 8px !important;
+                font-size: 1.1em !important;
+            }
+            
+            #mainNavbar .custom-menu-nav .dropdown-menu {
+                border-radius: 4px !important;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.1) !important;
+                border: none !important;
+                padding: 8px !important;
+            }
+            
+            #mainNavbar .custom-menu-nav .dropdown-item {
+                padding: 8px 15px !important;
+                border-radius: 3px !important;
+                margin-bottom: 2px !important;
+                transition: all 0.2s ease !important;
+            }
+            
+            #mainNavbar .custom-menu-nav .dropdown-item:hover {
+                background-color: #e9f0f7 !important;
+                transform: translateX(3px);
+            }
+            
+            /* Responsive styles for mobile */
+            @media (max-width: 991px) {
+                #mainNavbar .custom-menu-nav .nav-item {
+                    width: 100%;
+                }
+                
+                #mainNavbar .custom-menu-nav .dropdown-menu {
+                    box-shadow: none !important;
+                    border-left: 3px solid #1a4b72 !important;
+                    background-color: #f8f9fa !important;
+                    margin-left: 15px;
+                }
+            }
+        </style>
+        
+        <script type=\"text/javascript\">
+        document.addEventListener(\"DOMContentLoaded\", function() {
+            // Menu data from PHP
+            var menuData = " . $menusJson . ";
+            
+            // Function to create menu HTML
+            function createMainMenu() {
+                var mainNav = document.createElement('ul');
+                mainNav.className = 'navbar-nav mr-auto custom-menu-nav';
+                
+                // Add menu items
+                for (var parentId in menuData.parents) {
+                    var parent = menuData.parents[parentId];
+                    var children = menuData.children[parentId] || [];
+                    
+                    var menuItem = document.createElement('li');
+                    menuItem.className = 'd-block' + (children.length > 0 ? ' dropdown no-collapse' : ' no-collapse');
+                    
+                    var menuLink = document.createElement('a');
+                    menuLink.className = 'pr-4' + (children.length > 0 ? ' dropdown-toggle' : '');
+                    menuLink.href = parent.url;
+                    
+                    if (children.length > 0) {
+                        menuLink.setAttribute('data-toggle', 'dropdown');
+                        menuLink.setAttribute('aria-haspopup', 'true');
+                        menuLink.setAttribute('aria-expanded', 'false');
+                    }
+                    
+                    if (parent.icon) {
+                        var icon = document.createElement('i');
+                        icon.className = parent.icon;
+                        menuLink.appendChild(icon);
+                        menuLink.appendChild(document.createTextNode(' '));
+                    }
+                    
+                    menuLink.appendChild(document.createTextNode(parent.name));
+                    menuItem.appendChild(menuLink);
+                    
+                    // Add children if any
+                    if (children.length > 0) {
+                        var dropdown = document.createElement('ul');
+                        dropdown.className = 'dropdown-menu';
+                        
+                        for (var i = 0; i < children.length; i++) {
+                            var child = children[i];
+                            var childItem = document.createElement('li');
+                            childItem.className = 'dropdown-item';
+                            
+                            var childLink = document.createElement('a');
+                            childLink.className = 'dropdown-item px-2 py-0';
+                            childLink.href = child.url;
+                            
+                            if (child.icon) {
+                                var childIcon = document.createElement('i');
+                                childIcon.className = child.icon;
+                                childLink.appendChild(childIcon);
+                                childLink.appendChild(document.createTextNode(' '));
+                            }
+                            
+                            childLink.appendChild(document.createTextNode(child.name));
+                            childItem.appendChild(childLink);
+                            dropdown.appendChild(childItem);
+                        }
+                        
+                        menuItem.appendChild(dropdown);
+                    }
+                    
+                    mainNav.appendChild(menuItem);
+                }
+                
+                return mainNav;
+            }
+            
+            // Wait for the page to be fully loaded
+            setTimeout(function() {
+                // Find the navbar container
+                var mainNavbar = document.getElementById('mainNavbar');
+                
+                if (mainNavbar) {
+                    // Preserve the search form and account menu
+                    var searchForm = mainNavbar.querySelector('form');
+                    var accountMenu = mainNavbar.querySelector('.navbar-nav.ml-auto');
+                    
+                    // Clear the existing menu
+                    mainNavbar.innerHTML = '';
+                    
+                    // Add back the search form if it exists
+                    if (searchForm) {
+                        mainNavbar.appendChild(searchForm);
+                    }
+                    
+                    // Add our custom menu
+                    var mainMenu = createMainMenu();
+                    mainNavbar.appendChild(mainMenu);
+                    
+                    // Add back the account menu if it exists
+                    if (accountMenu) {
+                        mainNavbar.appendChild(accountMenu);
+                    }
+                    
+                    // Initialize any dropdown menus if Bootstrap is available
+                    if (typeof jQuery !== 'undefined' && typeof jQuery.fn.dropdown !== 'undefined') {
+                        jQuery('.dropdown-toggle').dropdown();
+                    }
+                } else {
+                    console.log('Menu Manager: Could not find #mainNavbar element');
+                }
+            }, 300); // Small delay to ensure the DOM is fully loaded
+        });
+        </script>";
+    } catch (\Exception $e) {
+        // Log error
+        logActivity("Menu Manager Error: " . $e->getMessage());
+        return "";
+    }
+});
